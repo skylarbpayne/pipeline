@@ -48,7 +48,7 @@ func (pl *Pipeline) AddStage(name string, numRoutines int, fnc func(instream <-c
 	return nil
 }
 
-func FanIn(inputs []chan interface{}, output chan<- interface{}) {
+func fanIn(inputs []chan interface{}, output chan<- interface{}) {
 	var wg sync.WaitGroup
 
 	out := func(c <-chan interface{}) {
@@ -68,7 +68,7 @@ func FanIn(inputs []chan interface{}, output chan<- interface{}) {
 	}()
 }
 
-func FanOut(input <-chan interface{}, outputs []chan interface{}) {
+func fanOut(input <-chan interface{}, outputs []chan interface{}) {
 	for i := range input {
 		valSent := false
 		for !valSent {
@@ -100,13 +100,13 @@ func (pl *Pipeline) Execute(input interface{}) (<-chan interface{}, error) {
 		begin := stage.chanIndexBegin
 		numRouts := stage.numRoutines
 
-		go FanOut(pipes[begin-1], pipes[begin:begin+numRouts])
+		go fanOut(pipes[begin-1], pipes[begin:begin+numRouts])
 		//run all routines of stage
 		for i := begin; i < begin+numRouts; i++ {
 			go stage.StageFunc(pipes[i], pipes[i+numRouts])
 		}
 		//fan in
-		go FanIn(pipes[begin+numRouts:begin+2*numRouts], pipes[begin+2*numRouts])
+		go fanIn(pipes[begin+numRouts:begin+2*numRouts], pipes[begin+2*numRouts])
 	}
 	pipes[0] <- input
 	close(pipes[0])
