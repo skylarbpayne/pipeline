@@ -1,8 +1,6 @@
 package pipeline
 
-import (
-	"testing"
-)
+import "testing"
 
 func TestMakePipeline(t *testing.T) {
 	pl := NewPipeline(1)
@@ -22,7 +20,7 @@ func TestMakePipelineWithZeroStages(t *testing.T) {
 
 func TestAddStageToPipeline(t *testing.T) {
 	pl := NewPipeline(1)
-	err := pl.AddStage("test", func(instream <-chan interface{}, outstream chan<- interface{}) {
+	err := pl.AddStage("test", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
 		for elem := range instream {
 			arr := elem.([]int)
 			for _, i := range arr {
@@ -39,32 +37,32 @@ func TestAddStageToPipeline(t *testing.T) {
 
 func TestAddNilStage(t *testing.T) {
 	pl := NewPipeline(1)
-	if err := pl.AddStage("test", nil); err == nil {
+	if err := pl.AddStage("test", 1, nil); err == nil {
 		t.Error("Expected error, got nil")
 	}
 }
 
 func TestAddStageWithoutName(t *testing.T) {
 	pl := NewPipeline(1)
-	if err := pl.AddStage("", func(instream <-chan interface{}, outstream chan<- interface{}) {}); err != nil {
+	if err := pl.AddStage("", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {}); err != nil {
 		t.Error("Expected nil, got ", err)
 	}
 }
 
 func TestAddOneTooManyStages(t *testing.T) {
 	pl := NewPipeline(1)
-	if err := pl.AddStage("", func(instream <-chan interface{}, outstream chan<- interface{}) {}); err != nil {
+	if err := pl.AddStage("", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {}); err != nil {
 		t.Error("Error: ", err)
 	}
 
-	if err := pl.AddStage("", func(instream <-chan interface{}, outstream chan<- interface{}) {}); err == nil {
+	if err := pl.AddStage("", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {}); err == nil {
 		t.Error("Expected error, got nil")
 	}
 }
 
 func TestSimpleArraySplitPipeline(t *testing.T) {
 	pl := NewPipeline(1)
-	err := pl.AddStage("begin", func(instream <-chan interface{}, outstream chan<- interface{}) {
+	err := pl.AddStage("begin", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
 		defer close(outstream)
 		for elem := range instream {
 			arr := elem.([]int)
@@ -86,6 +84,9 @@ func TestSimpleArraySplitPipeline(t *testing.T) {
 	for elem := range res {
 		output = append(output, elem.(int))
 	}
+	if len(input) != len(output) {
+		t.Error("Input: ", input, ", Output: ", output)
+	}
 	for i := range input {
 		if input[i] != output[i] {
 			t.Errorf("Expected ", input, " got ", output)
@@ -95,7 +96,7 @@ func TestSimpleArraySplitPipeline(t *testing.T) {
 
 func TestArraySplitAndSumPipeline(t *testing.T) {
 	pl := NewPipeline(2)
-	err := pl.AddStage("split", func(instream <-chan interface{}, outstream chan<- interface{}) {
+	err := pl.AddStage("split", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
 		defer close(outstream)
 		for elem := range instream {
 			arr := elem.([]int)
@@ -108,7 +109,7 @@ func TestArraySplitAndSumPipeline(t *testing.T) {
 		t.Error("Error: ", err)
 	}
 
-	err = pl.AddStage("sum", func(instream <-chan interface{}, outstream chan<- interface{}) {
+	err = pl.AddStage("sum", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
 		defer close(outstream)
 		sum := 0
 		for elem := range instream {
@@ -131,6 +132,53 @@ func TestArraySplitAndSumPipeline(t *testing.T) {
 	}
 }
 
-//Test concurrent stage(s)
-//Fan in / Fan out
-//How to make prettier (i.e. refactor phase?)
+func TestConcurrentArraySplitAndSumPipeline(t *testing.T) {
+	pl := NewPipeline(3)
+	err := pl.AddStage("split", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
+		defer close(outstream)
+		for elem := range instream {
+			arr := elem.([]int)
+			for _, num := range arr {
+				outstream <- num
+			}
+		}
+	})
+	if err != nil {
+		t.Error("Error: ", err)
+	}
+
+	err = pl.AddStage("sum", 2, func(instream <-chan interface{}, outstream chan<- interface{}) {
+		defer close(outstream)
+		sum := 0
+		for elem := range instream {
+			sum += elem.(int)
+		}
+		outstream <- sum
+	})
+	if err != nil {
+		t.Error("Error: ", err)
+	}
+
+	err = pl.AddStage("sum2", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
+		defer close(outstream)
+		sum := 0
+		for elem := range instream {
+			sum += elem.(int)
+		}
+		outstream <- sum
+	})
+	if err != nil {
+		t.Error("Error: ", err)
+	}
+
+	input := []int{1, 2, 3, 4, 5, 6, 7, 8}
+	exp := 36
+	res, err := pl.Execute(input)
+	if err != nil {
+		t.Error("Error: ", err)
+	}
+	output := <-res
+	if output.(int) != exp {
+		t.Error("Expected ", exp, " got ", output.(int))
+	}
+}
