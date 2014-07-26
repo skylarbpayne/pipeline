@@ -63,7 +63,6 @@ func TestAddOneTooManyStages(t *testing.T) {
 func TestSimpleArraySplitPipeline(t *testing.T) {
 	pl := NewPipeline(1)
 	err := pl.AddStage("begin", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
-		defer close(outstream)
 		for elem := range instream {
 			arr := elem.([]int)
 			for _, num := range arr {
@@ -97,7 +96,6 @@ func TestSimpleArraySplitPipeline(t *testing.T) {
 func TestArraySplitAndSumPipeline(t *testing.T) {
 	pl := NewPipeline(2)
 	err := pl.AddStage("split", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
-		defer close(outstream)
 		for elem := range instream {
 			arr := elem.([]int)
 			for _, num := range arr {
@@ -110,7 +108,6 @@ func TestArraySplitAndSumPipeline(t *testing.T) {
 	}
 
 	err = pl.AddStage("sum", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
-		defer close(outstream)
 		sum := 0
 		for elem := range instream {
 			sum += elem.(int)
@@ -135,7 +132,6 @@ func TestArraySplitAndSumPipeline(t *testing.T) {
 func TestConcurrentArraySplitAndSumPipeline(t *testing.T) {
 	pl := NewPipeline(3)
 	err := pl.AddStage("split", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
-		defer close(outstream)
 		for elem := range instream {
 			arr := elem.([]int)
 			for _, num := range arr {
@@ -148,7 +144,6 @@ func TestConcurrentArraySplitAndSumPipeline(t *testing.T) {
 	}
 
 	err = pl.AddStage("sum", 2, func(instream <-chan interface{}, outstream chan<- interface{}) {
-		defer close(outstream)
 		sum := 0
 		for elem := range instream {
 			sum += elem.(int)
@@ -160,7 +155,6 @@ func TestConcurrentArraySplitAndSumPipeline(t *testing.T) {
 	}
 
 	err = pl.AddStage("sum2", 1, func(instream <-chan interface{}, outstream chan<- interface{}) {
-		defer close(outstream)
 		sum := 0
 		for elem := range instream {
 			sum += elem.(int)

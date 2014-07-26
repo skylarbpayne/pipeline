@@ -1,11 +1,9 @@
 package pipeline
 
 /*
-	* TODO
-	*	2) Add a done channel to free resources should an error of sorts occur!
-	*	3) Consider making the stage functions taking a single interface{} value and returning a single
-			interface{} value. That way the user doesn't even have to worry about the channels!
-*/
+* TODO
+*	2) Add a done channel to free resources should an error of sorts occur!
+ */
 
 import (
 	"errors"
@@ -95,6 +93,11 @@ func (pl *Pipeline) Execute(input interface{}) (<-chan interface{}, error) {
 		pipes[i] = make(chan interface{})
 	}
 
+	wrapper := func(instream <-chan interface{}, outstream chan<- interface{}, stageFunc func(instream <-chan interface{}, outstream chan<- interface{})) {
+		defer close(outstream)
+		stageFunc(instream, outstream)
+	}
+
 	for _, stage := range pl.stages {
 		//fan out
 		begin := stage.chanIndexBegin
@@ -103,7 +106,7 @@ func (pl *Pipeline) Execute(input interface{}) (<-chan interface{}, error) {
 		go fanOut(pipes[begin-1], pipes[begin:begin+numRouts])
 		//run all routines of stage
 		for i := begin; i < begin+numRouts; i++ {
-			go stage.StageFunc(pipes[i], pipes[i+numRouts])
+			go wrapper(pipes[i], pipes[i+numRouts], stage.StageFunc)
 		}
 		//fan in
 		go fanIn(pipes[begin+numRouts:begin+2*numRouts], pipes[begin+2*numRouts])

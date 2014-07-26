@@ -14,7 +14,7 @@ pl.AddStage("split", 2, Split)
 res, err := pl.Execute(input)
 ```
 
-Note: I'll be changing up the interface pretty soon so that all the channel handling will take place in the background and the only thing the user will have to worry about is casting to the correct data type.
+You can look at the test file to see some examples of how to define your own pipeline.
 
-Note2: This is slightly unstable because if some type of error occurs downstream in the pipeline, there's no guarantee that the upstream resources won't deadlock. After changing the interface, this will be the number one
+Note: This is slightly unstable because if some type of error occurs downstream in the pipeline, there's no guarantee that the upstream resources won't deadlock. After changing the interface, this will be the number one
 priority. It isn't the number one priority right now because the change to the interface will change how I have to implement this.
