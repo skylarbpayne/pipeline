@@ -1,10 +1,5 @@
 package pipeline
 
-/*
-* TODO
-*	2) Add a done channel to free resources should an error of sorts occur!
- */
-
 import (
 	"errors"
 	"sync"
@@ -15,13 +10,14 @@ type Pipeline struct {
 	stages      []*Stage
 	nextStage   int
 	numChannels int
+	done        chan int
 }
 
 type Stage struct {
 	Name           string
 	chanIndexBegin int
 	numRoutines    int
-	StageFunc      func(instream <-chan interface{}, outstream chan<- interface{})
+	StageFunc      func(instream <-chan interface{}, outstream chan<- interface{}, done chan int)
 }
 
 func NewPipeline(numStages int) *Pipeline {
@@ -29,10 +25,21 @@ func NewPipeline(numStages int) *Pipeline {
 		return nil
 	}
 
-	return &Pipeline{numStages, make([]*Stage, numStages), 0, 1}
+	return &Pipeline{numStages, make([]*Stage, numStages), 0, 1, make(chan int)}
 }
 
-func (pl *Pipeline) AddStage(name string, numRoutines int, fnc func(instream <-chan interface{}, outstream chan<- interface{})) error {
+func (pl *Pipeline) Cleanup() {
+	opened := true
+	select {
+	case _, opened = <-pl.done:
+	default:
+	}
+	if opened {
+		close(pl.done)
+	}
+}
+
+func (pl *Pipeline) AddStage(name string, numRoutines int, fnc func(instream <-chan interface{}, outstream chan<- interface{}, done chan int)) error {
 	if pl.nextStage >= pl.NumStages {
 		return errors.New("AddStage: No Pipeline stages left!")
 	} else if fnc == nil {
@@ -46,27 +53,32 @@ func (pl *Pipeline) AddStage(name string, numRoutines int, fnc func(instream <-c
 	return nil
 }
 
-func fanIn(inputs []chan interface{}, output chan<- interface{}) {
+func fanIn(inputs []chan interface{}, output chan<- interface{}, done <-chan int) {
 	var wg sync.WaitGroup
 
 	out := func(c <-chan interface{}) {
+		defer wg.Done()
 		for n := range c {
-			output <- n
+			select {
+			case output <- n:
+			case <-done:
+				return
+			}
 		}
-		wg.Done()
 	}
+
 	wg.Add(len(inputs))
 	for _, c := range inputs {
 		go out(c)
 	}
 
 	go func() {
+		defer close(output)
 		wg.Wait()
-		close(output)
 	}()
 }
 
-func fanOut(input <-chan interface{}, outputs []chan interface{}) {
+func fanOut(input <-chan interface{}, outputs []chan interface{}, done <-chan int) {
 	for i := range input {
 		valSent := false
 		for !valSent {
@@ -74,6 +86,8 @@ func fanOut(input <-chan interface{}, outputs []chan interface{}) {
 				select {
 				case o <- i:
 					valSent = true
+				case <-done:
+					return
 				default:
 				}
 				if valSent {
@@ -87,15 +101,15 @@ func fanOut(input <-chan interface{}, outputs []chan interface{}) {
 	}
 }
 
-func (pl *Pipeline) Execute(input interface{}) (<-chan interface{}, error) {
+func (pl *Pipeline) Execute(input ...interface{}) (<-chan interface{}, error) {
 	pipes := make([]chan interface{}, pl.numChannels)
 	for i := range pipes {
 		pipes[i] = make(chan interface{})
 	}
 
-	wrapper := func(instream <-chan interface{}, outstream chan<- interface{}, stageFunc func(instream <-chan interface{}, outstream chan<- interface{})) {
+	wrapper := func(instream <-chan interface{}, outstream chan<- interface{}, stageFunc func(instream <-chan interface{}, outstream chan<- interface{}, done chan int)) {
 		defer close(outstream)
-		stageFunc(instream, outstream)
+		stageFunc(instream, outstream, pl.done)
 	}
 
 	for _, stage := range pl.stages {
@@ -103,15 +117,21 @@ func (pl *Pipeline) Execute(input interface{}) (<-chan interface{}, error) {
 		begin := stage.chanIndexBegin
 		numRouts := stage.numRoutines
 
-		go fanOut(pipes[begin-1], pipes[begin:begin+numRouts])
+		go fanOut(pipes[begin-1], pipes[begin:begin+numRouts], pl.done)
 		//run all routines of stage
 		for i := begin; i < begin+numRouts; i++ {
 			go wrapper(pipes[i], pipes[i+numRouts], stage.StageFunc)
 		}
 		//fan in
-		go fanIn(pipes[begin+numRouts:begin+2*numRouts], pipes[begin+2*numRouts])
+		go fanIn(pipes[begin+numRouts:begin+2*numRouts], pipes[begin+2*numRouts], pl.done)
 	}
-	pipes[0] <- input
+	for _, i := range input {
+		select {
+		case pipes[0] <- i:
+		case <-pl.done:
+			return nil, errors.New("Done channel closed. Exiting.")
+		}
+	}
 	close(pipes[0])
 	return pipes[pl.numChannels-1], nil
 }

@@ -10,11 +10,15 @@ pl := NewPipeline(3)
 //Add a stage named split with 2 concurrent processes for the function 'Split'
 pl.AddStage("split", 2, Split)
 
+//If you want to abort from inside a stage, just close the done channel!
+...
+close(done)
+...
+
 //Get the resulting channel
 res, err := pl.Execute(input)
 ```
 
 You can look at the test file to see some examples of how to define your own pipeline.
-
-Note: This is slightly unstable because if some type of error occurs downstream in the pipeline, there's no guarantee that the upstream resources won't deadlock. After changing the interface, this will be the number one
-priority. It isn't the number one priority right now because the change to the interface will change how I have to implement this.
+I will probably update the readme with a map-reduce example after I fix a few interface
+issues.
