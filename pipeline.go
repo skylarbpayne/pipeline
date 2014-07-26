@@ -5,6 +5,8 @@ import (
 	"sync"
 )
 
+type stageFunc func(<-chan interface{}, chan<- interface{}, chan int)
+
 type Pipeline struct {
 	NumStages   int
 	stages      []*Stage
@@ -17,7 +19,7 @@ type Stage struct {
 	Name           string
 	chanIndexBegin int
 	numRoutines    int
-	StageFunc      func(instream <-chan interface{}, outstream chan<- interface{}, done chan int)
+	StageFunc      stageFunc
 }
 
 func NewPipeline(numStages int) *Pipeline {
@@ -39,7 +41,7 @@ func (pl *Pipeline) Cleanup() {
 	}
 }
 
-func (pl *Pipeline) AddStage(name string, numRoutines int, fnc func(instream <-chan interface{}, outstream chan<- interface{}, done chan int)) error {
+func (pl *Pipeline) AddStage(name string, numRoutines int, fnc stageFunc) error {
 	if pl.nextStage >= pl.NumStages {
 		return errors.New("AddStage: No Pipeline stages left!")
 	} else if fnc == nil {
@@ -107,9 +109,9 @@ func (pl *Pipeline) Execute(input ...interface{}) (<-chan interface{}, error) {
 		pipes[i] = make(chan interface{})
 	}
 
-	wrapper := func(instream <-chan interface{}, outstream chan<- interface{}, stageFunc func(instream <-chan interface{}, outstream chan<- interface{}, done chan int)) {
+	wrapper := func(instream <-chan interface{}, outstream chan<- interface{}, stage stageFunc) {
 		defer close(outstream)
-		stageFunc(instream, outstream, pl.done)
+		stage(instream, outstream, pl.done)
 	}
 
 	for _, stage := range pl.stages {
